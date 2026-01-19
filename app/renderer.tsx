@@ -12,7 +12,7 @@ initializeTheme()
 ReactDOM.createRoot(document.getElementById('app') as HTMLElement).render(
   <React.StrictMode>
     <ErrorBoundary>
-      <WindowContextProvider titlebar={{ title: 'CS:GO Top Toolkit', icon: appIcon, menuItems }}>
+      <WindowContextProvider titlebar={{ title: 'GOKZ.TOP Toolkit', icon: appIcon, menuItems }}>
         <App />
       </WindowContextProvider>
     </ErrorBoundary>

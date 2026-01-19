@@ -5,7 +5,8 @@ import { registerResourcesProtocol } from './protocols'
 import { registerWindowHandlers } from '@/lib/conveyor/handlers/window-handler'
 import { registerAppHandlers } from '@/lib/conveyor/handlers/app-handler'
 import { registerSettingsHandlers } from '@/lib/conveyor/handlers/settings-handler'
-import { registerGsiHandlers } from '@/lib/conveyor/handlers/gsi-handler'
+import { registerGsiHandlers, autoStartGsiIfEnabled } from '@/lib/conveyor/handlers/gsi-handler'
+import { registerOverlayHandlers } from '@/lib/conveyor/handlers/overlay-handler'
 
 export function createAppWindow(): void {
   // Register custom protocol for resources
@@ -20,7 +21,7 @@ export function createAppWindow(): void {
     icon: appIcon,
     frame: false,
     titleBarStyle: 'hiddenInset',
-    title: 'CS:GO Top Toolkit',
+    title: 'GOKZ.TOP Toolkit',
     maximizable: false,
     resizable: true,
     webPreferences: {
@@ -34,6 +35,12 @@ export function createAppWindow(): void {
   registerAppHandlers(app)
   registerSettingsHandlers()
   registerGsiHandlers()
+  registerOverlayHandlers()
+
+  // Auto-start GSI server if preference is enabled
+  autoStartGsiIfEnabled().catch((error) => {
+    console.error('Failed to auto-start GSI:', error)
+  })
 
   mainWindow.on('ready-to-show', () => {
     mainWindow.show()

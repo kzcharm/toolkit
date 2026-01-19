@@ -1,6 +1,6 @@
-# Electron React App
+# GOKZ.TOP Toolkit
 
-A modern Electron application template with React, Vite, TypeScript, and TailwindCSS. This project provides a solid foundation for developing cross-platform desktop applications.
+A modern Electron application with React, Vite, TypeScript, and TailwindCSS. GOKZ.TOP Toolkit provides a comprehensive desktop application for GOKZ players.
 
 <br />
 
@@ -62,7 +62,7 @@ Clone the repository:
 git clone https://github.com/guasam/electron-react-app
 
 # Change directory
-cd electron-react-app
+cd gokz-top-toolkit
 
 # Install dependencies (use any package manager: npm, yarn, pnpm, bun)
 npm install

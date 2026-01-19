@@ -21,14 +21,13 @@ const EraContent = () => {
   return (
     <div>
       <h2 className="flex items-center gap-4">
-        Electron React App
+        GOKZ.TOP Toolkit
         <div className="p-1 rounded-md bg-primary/10">
           <img src="res://icons/era.svg" className="w-4 h-4" />
         </div>
       </h2>
       <p>
-        Welcome to the Electron React App (v{appVersion})! A prebuilt starter kit that provides a solid foundation for
-        developing desktop applications.
+        Welcome to the GOKZ.TOP Toolkit (v{appVersion})! A modern desktop application for GOKZ players.
       </p>
       <p>
         This project is built with Electron, React, Vite, TypeScript, and Tailwind CSS to provide a modern development
@@ -62,7 +61,7 @@ const EraContent = () => {
       </div>
 
       <p className="learn-more">
-        Learn more about Electron React App at{' '}
+        Learn more about GOKZ.TOP Toolkit at{' '}
         <a href="https://github.com/guasam/electron-react-app" target="_blank" rel="noreferrer">
           github.com
         </a>

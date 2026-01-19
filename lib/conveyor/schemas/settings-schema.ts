@@ -136,4 +136,20 @@ export const settingsIpcSchema = {
       })
       .nullable(),
   },
+  'settings:get-overlay-enabled': {
+    args: z.tuple([]),
+    return: z.boolean(),
+  },
+  'settings:set-overlay-enabled': {
+    args: z.tuple([z.boolean()]),
+    return: z.void(),
+  },
+  'settings:get-gsi-auto-start': {
+    args: z.tuple([]),
+    return: z.boolean(),
+  },
+  'settings:set-gsi-auto-start': {
+    args: z.tuple([z.boolean()]),
+    return: z.void(),
+  },
 }

@@ -12,6 +12,15 @@ declare global {
         getGameState: () => Promise<any>
         checkCSGORunning: () => Promise<{ running: boolean; processName: string | null }>
       }
+      overlay: {
+        startServer: () => Promise<{ success: boolean; port: number | null; url: string | null; error?: string }>
+        stopServer: () => Promise<{ success: boolean }>
+        getStatus: () => Promise<{ running: boolean; port: number | null; url: string | null }>
+      }
+      settings: {
+        getOverlayEnabled: () => Promise<boolean>
+        setOverlayEnabled: (enabled: boolean) => Promise<void>
+      }
     }
   }
 }
@@ -25,6 +34,9 @@ interface GameState {
   }
   player?: {
     name?: string
+    match_stats?: {
+      score?: number
+    }
   }
 }
 
@@ -35,23 +47,19 @@ export default function GOKZOverlayPage() {
   const [gsiPort, setGsiPort] = useState<number | null>(null)
   const [lastDataReceived, setLastDataReceived] = useState<number | null>(null)
   const [gameState, setGameState] = useState<GameState | null>(null)
-  const [isStarting, setIsStarting] = useState(false)
-  const [isStopping, setIsStopping] = useState(false)
+  const [overlayRunning, setOverlayRunning] = useState(false)
+  const [overlayUrl, setOverlayUrl] = useState<string | null>(null)
+  const [isToggling, setIsToggling] = useState(false)
+  const [copied, setCopied] = useState(false)
 
-  // Load initial status and auto-start server
+  // Load initial status (no auto-start)
   useEffect(() => {
-    const initialize = async () => {
-      await loadStatus()
-      // Auto-start GSI server if not running
-      const status = await window.conveyor.gsi.getStatus()
-      if (!status.running && !isStarting) {
-        await handleStartServer()
-      }
-    }
-    initialize()
+    loadStatus()
     
     // Poll for status updates every 2 seconds
-    const interval = setInterval(loadStatus, 2000)
+    const interval = setInterval(async () => {
+      await loadStatus()
+    }, 2000)
     return () => clearInterval(interval)
   }, [])
 
@@ -73,41 +81,65 @@ export default function GOKZOverlayPage() {
         const state = await window.conveyor.gsi.getGameState()
         setGameState(state)
       }
+
+      // Check overlay server status
+      const overlayStatus = await window.conveyor.overlay.getStatus()
+      setOverlayRunning(overlayStatus.running)
+      setOverlayUrl(overlayStatus.url)
     } catch (error) {
       console.error('Error loading status:', error)
     }
   }
 
-  const handleStartServer = async () => {
-    setIsStarting(true)
+  const handleToggleServices = async (enabled: boolean) => {
+    setIsToggling(true)
     try {
-      const result = await window.conveyor.gsi.startServer()
-      if (result.success) {
-        setGsiRunning(true)
-        setGsiPort(result.port)
-        await loadStatus()
+      if (enabled) {
+        // Start both services
+        const gsiResult = await window.conveyor.gsi.startServer()
+        if (gsiResult.success) {
+          // Wait a bit for GSI to start
+          await new Promise(resolve => setTimeout(resolve, 500))
+          const overlayResult = await window.conveyor.overlay.startServer()
+          if (overlayResult.success) {
+            await window.conveyor.settings.setOverlayEnabled(true)
+            await loadStatus()
+          } else {
+            console.error('Failed to start overlay server:', overlayResult.error)
+            // Stop GSI if overlay failed
+            await window.conveyor.gsi.stopServer()
+          }
+        } else {
+          console.error('Failed to start GSI server:', gsiResult.error)
+        }
       } else {
-        console.error('Failed to start GSI server:', result.error)
+        // Stop both services
+        await window.conveyor.overlay.stopServer()
+        await window.conveyor.gsi.stopServer()
+        await window.conveyor.settings.setOverlayEnabled(false)
+        setOverlayRunning(false)
+        setOverlayUrl(null)
+        setGsiRunning(false)
+        setGsiPort(null)
+        setLastDataReceived(null)
+        setGameState(null)
       }
     } catch (error) {
-      console.error('Error starting GSI server:', error)
+      console.error('Error toggling services:', error)
     } finally {
-      setIsStarting(false)
+      setIsToggling(false)
     }
   }
 
-  const handleStopServer = async () => {
-    setIsStopping(true)
-    try {
-      await window.conveyor.gsi.stopServer()
-      setGsiRunning(false)
-      setGsiPort(null)
-      setLastDataReceived(null)
-      setGameState(null)
-    } catch (error) {
-      console.error('Error stopping GSI server:', error)
-    } finally {
-      setIsStopping(false)
+  const handleCopyLink = async () => {
+    if (overlayUrl) {
+      try {
+        await navigator.clipboard.writeText(overlayUrl)
+        setCopied(true)
+        setTimeout(() => setCopied(false), 2000)
+      } catch (error) {
+        console.error('Error copying link:', error)
+      }
     }
   }
 
@@ -150,6 +182,29 @@ export default function GOKZOverlayPage() {
           </div>
         </div>
 
+        {/* Overlay Server Status */}
+        <div className="border rounded-lg p-4">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-sm font-medium">Progression Overlay</h3>
+            <Badge variant={overlayRunning ? 'default' : 'destructive'}>
+              {overlayRunning ? 'Running' : 'Stopped'}
+            </Badge>
+          </div>
+          {overlayRunning && overlayUrl && (
+            <div className="mt-2">
+              <p className="text-xs text-muted-foreground mb-2">URL: {overlayUrl}</p>
+              <Button
+                onClick={handleCopyLink}
+                variant="outline"
+                size="sm"
+                className="w-full"
+              >
+                {copied ? 'Copied!' : 'Copy Overlay URL'}
+              </Button>
+            </div>
+          )}
+        </div>
+
         {/* GSI Connection Status */}
         <div className="border rounded-lg p-4">
           <div className="flex items-center justify-between mb-2">
@@ -188,29 +243,37 @@ export default function GOKZOverlayPage() {
                   <p className="text-sm font-medium">{gameState.provider.name}</p>
                 </div>
               )}
+              {typeof gameState.player?.match_stats?.score === 'number' && (
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1">Progress</p>
+                  <p className="text-sm font-medium">
+                    {Math.max(0, Math.min(100, gameState.player.match_stats.score / 10)).toFixed(1)}%
+                  </p>
+                </div>
+              )}
             </div>
           </div>
         )}
 
         {/* Server Controls */}
-        <div className="flex gap-2">
-          <Button
-            onClick={handleStartServer}
-            disabled={gsiRunning || isStarting}
-            variant={gsiRunning ? 'outline' : 'default'}
-          >
-            {isStarting ? 'Starting...' : 'Start GSI Server'}
-          </Button>
-          <Button
-            onClick={handleStopServer}
-            disabled={!gsiRunning || isStopping}
-            variant="outline"
-          >
-            {isStopping ? 'Stopping...' : 'Stop GSI Server'}
-          </Button>
-          <Button onClick={loadStatus} variant="outline">
-            Refresh Status
-          </Button>
+        <div className="flex flex-col gap-4">
+          <div className="flex gap-2">
+            <Button
+              onClick={() => handleToggleServices(!gsiRunning || !overlayRunning)}
+              disabled={isToggling}
+              variant={gsiRunning && overlayRunning ? 'destructive' : 'default'}
+              className="flex-1"
+            >
+              {isToggling
+                ? 'Starting...'
+                : gsiRunning && overlayRunning
+                  ? 'Stop Services'
+                  : 'Start Services'}
+            </Button>
+            <Button onClick={loadStatus} variant="outline">
+              Refresh Status
+            </Button>
+          </div>
         </div>
 
         {/* Instructions */}
@@ -218,10 +281,13 @@ export default function GOKZOverlayPage() {
           <h3 className="text-sm font-medium mb-2">Instructions</h3>
           <ul className="text-xs text-muted-foreground space-y-1 list-disc list-inside">
             <li>Make sure CS:GO is running</li>
-            <li>Start the GSI server using the button above</li>
+            <li>Click "Start Services" to start both GSI and Overlay servers</li>
             <li>The config file will be automatically written to your CS:GO cfg folder</li>
             <li>Restart CS:GO if needed for the GSI config to take effect</li>
             <li>Game state data will appear here once CS:GO starts sending data</li>
+            <li>Your preference will be saved and restored when you return</li>
+            <li>Copy the overlay URL and use it in OBS or your streaming software</li>
+            <li>The overlay shows your match score progress as a percentage</li>
           </ul>
         </div>
       </div>

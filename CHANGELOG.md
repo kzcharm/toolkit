@@ -1,6 +1,6 @@
 # Change Log
 
-All notable changes to the electron-react-app (ERA) are listed here.
+All notable changes to the GOKZ.TOP Toolkit are listed here.
 
 <br>
 

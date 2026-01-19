@@ -145,7 +145,7 @@ function getSettingsPath(): string {
 /**
  * Load settings from disk
  */
-async function loadSettings(): Promise<{ csgoPath?: string; theme?: 'dark' | 'light' | 'system' }> {
+async function loadSettings(): Promise<{ csgoPath?: string; theme?: 'dark' | 'light' | 'system'; overlayEnabled?: boolean; gsiAutoStart?: boolean }> {
   const settingsPath = getSettingsPath()
   if (await fs.pathExists(settingsPath)) {
     try {
@@ -162,7 +162,7 @@ async function loadSettings(): Promise<{ csgoPath?: string; theme?: 'dark' | 'li
 /**
  * Save settings to disk
  */
-async function saveSettings(settings: { csgoPath?: string; theme?: 'dark' | 'light' | 'system' }): Promise<void> {
+async function saveSettings(settings: { csgoPath?: string; theme?: 'dark' | 'light' | 'system'; overlayEnabled?: boolean; gsiAutoStart?: boolean }): Promise<void> {
   const settingsPath = getSettingsPath()
   await fs.ensureDir(path.dirname(settingsPath))
   await fs.writeJSON(settingsPath, settings, { spaces: 2 })
@@ -1036,6 +1036,32 @@ export const registerSettingsHandlers = () => {
   handle('settings:set-theme', async (theme: 'dark' | 'light' | 'system') => {
     const settings = await loadSettings()
     settings.theme = theme
+    await saveSettings(settings)
+  })
+
+  // Get overlay enabled preference
+  handle('settings:get-overlay-enabled', async () => {
+    const settings = await loadSettings()
+    return settings.overlayEnabled ?? false
+  })
+
+  // Set overlay enabled preference
+  handle('settings:set-overlay-enabled', async (enabled: boolean) => {
+    const settings = await loadSettings()
+    settings.overlayEnabled = enabled
+    await saveSettings(settings)
+  })
+
+  // Get GSI auto-start preference
+  handle('settings:get-gsi-auto-start', async () => {
+    const settings = await loadSettings()
+    return settings.gsiAutoStart ?? false
+  })
+
+  // Set GSI auto-start preference
+  handle('settings:set-gsi-auto-start', async (enabled: boolean) => {
+    const settings = await loadSettings()
+    settings.gsiAutoStart = enabled
     await saveSettings(settings)
   })
 }

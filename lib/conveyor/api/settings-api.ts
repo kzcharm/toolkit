@@ -19,4 +19,8 @@ export class SettingsApi extends ConveyorApi {
   clearMapsCache = () => this.invoke('settings:clear-maps-cache')
   saveCheckedMaps = (mapsData: unknown[]) => this.invoke('settings:save-checked-maps', mapsData)
   loadCheckedMaps = () => this.invoke('settings:load-checked-maps')
+  getOverlayEnabled = () => this.invoke('settings:get-overlay-enabled')
+  setOverlayEnabled = (enabled: boolean) => this.invoke('settings:set-overlay-enabled', enabled)
+  getGsiAutoStart = () => this.invoke('settings:get-gsi-auto-start')
+  setGsiAutoStart = (enabled: boolean) => this.invoke('settings:set-gsi-auto-start', enabled)
 }

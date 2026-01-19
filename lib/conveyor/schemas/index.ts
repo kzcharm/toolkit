@@ -3,6 +3,7 @@ import { windowIpcSchema } from './window-schema'
 import { appIpcSchema } from './app-schema'
 import { settingsIpcSchema } from './settings-schema'
 import { gsiIpcSchema } from './gsi-schema'
+import { overlayIpcSchema } from './overlay-schema'
 
 // Define all IPC channel schemas in one place
 export const ipcSchemas = {
@@ -10,6 +11,7 @@ export const ipcSchemas = {
   ...appIpcSchema,
   ...settingsIpcSchema,
   ...gsiIpcSchema,
+  ...overlayIpcSchema,
 } as const
 
 // Extract types from Zod schemas
