@@ -225,7 +225,6 @@ class OverlayServerImpl implements OverlayServer {
     
     .bar {
       height: 100%;
-      background: linear-gradient(to right, #ee657a, #ab3c4c);
       width: 0%;
       transition: width 0.4s ease;
       position: relative;
@@ -276,8 +275,28 @@ class OverlayServerImpl implements OverlayServer {
   </div>
 
   <script>
+    // Preset color schemes
+    const COLOR_PRESETS = {
+      red: { from: '#ee657a', to: '#ab3c4c' },
+      blue: { from: '#4a90e2', to: '#2e5c8a' },
+      green: { from: '#4ade80', to: '#16a34a' },
+      purple: { from: '#a855f7', to: '#7c3aed' },
+      orange: { from: '#fb923c', to: '#ea580c' },
+      yellow: { from: '#fbbf24', to: '#d97706' },
+      cyan: { from: '#22d3ee', to: '#0891b2' },
+      pink: { from: '#f472b6', to: '#db2777' },
+    };
+
+    // Read color query parameter
+    const urlParams = new URLSearchParams(window.location.search);
+    const colorParam = urlParams.get('color') || 'red';
+    const colorScheme = COLOR_PRESETS[colorParam] || COLOR_PRESETS.red;
+
     const bar = document.getElementById('bar');
     const label = document.getElementById('label');
+    
+    // Apply color scheme
+    bar.style.background = 'linear-gradient(to right, ' + colorScheme.from + ', ' + colorScheme.to + ')';
     
     const pollGSIData = async () => {
       try {
@@ -419,6 +438,12 @@ class OverlayServerImpl implements OverlayServer {
     let proPb = null;
     let fetchTimer = null;
     let abortController = new AbortController();
+
+    // Read query parameters
+    const urlParams = new URLSearchParams(window.location.search);
+    const showPts = urlParams.get('show_pts') !== 'false';
+    const showPb = urlParams.get('pb') !== 'false'; // Default: show PB
+    const showWr = urlParams.get('wr') !== 'false'; // Default: show WR
 
     // Cache utilities
     function getCacheEntry(key) {
@@ -720,17 +745,17 @@ class OverlayServerImpl implements OverlayServer {
           const preferNubTimes = false;
 
           // Display OVR (Overall) first, then PRO
-          if (map && ovrWr !== null && !preferNubTimes) {
+          if (map && ovrWr !== null && !preferNubTimes && (showPb || showWr)) {
             const row = createRecordRow('OVR', ovrWr, ovrPb);
             recordsEl.appendChild(row);
           }
 
-          if (map && proWr !== null) {
+          if (map && proWr !== null && (showPb || showWr)) {
             const row = createRecordRow('PRO', proWr, proPb);
             recordsEl.appendChild(row);
           }
 
-          if (map && preferNubTimes) {
+          if (map && preferNubTimes && (showPb || showWr)) {
             const nubWr = (ovrWr !== undefined && proWr !== undefined) 
               ? (ovrWr && proWr ? (ovrWr.time <= proWr.time ? ovrWr : proWr) : (ovrWr || proWr))
               : undefined;
@@ -758,20 +783,25 @@ class OverlayServerImpl implements OverlayServer {
 
       let html = '<span style="color: ' + headerColor + '; font-size: 22px; font-weight: 300; margin-left: ' + marginLeft + ';">' + label + ' |</span>';
 
-      if (wr === undefined) {
+      if (!showWr) {
+        // Don't show WR row at all
+      } else if (wr === undefined) {
         html += '<img class="loading-indicator" src="/map/assets/loading.gif" alt="Loading" />';
       } else if (wr) {
         html += '<div style="display: inline; color: white; font-size: 22px; font-weight: 300; padding-left: 5px;">';
         html += formatTime(wr.time) + ' by';
         html += '<span class="record-player-name">' + wr.player_name + '</span>';
 
-        if (pb === undefined) {
-          html += '<img class="loading-indicator" src="/map/assets/loading.gif" alt="Loading" />';
-        } else if (pb) {
-          if (pb.time === wr.time) {
-            html += '<span class="record-time-wr"> (WR by me)</span>';
-          } else {
-            html += '<span class="record-time-diff"> (+' + formatTime(pb.time - wr.time) + ')</span>';
+        if (showPb) {
+          if (pb === undefined) {
+            html += '<img class="loading-indicator" src="/map/assets/loading.gif" alt="Loading" />';
+          } else if (pb) {
+            if (pb.time === wr.time) {
+              html += '<span class="record-time-wr"> (WR by me)</span>';
+            } else {
+              const pointsText = showPts && typeof pb.points === 'number' ? ' ' + pb.points + 'pts' : '';
+              html += '<span class="record-time-diff"> (+' + formatTime(pb.time - wr.time) + pointsText + ')</span>';
+            }
           }
         }
         html += '</div>';

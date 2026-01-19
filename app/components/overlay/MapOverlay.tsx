@@ -42,6 +42,12 @@ export default function MapOverlay() {
   const fetchTimerRef = useRef<NodeJS.Timeout | null>(null)
   const dataFetchInterval = 30 // seconds
 
+  // Read query parameters
+  const urlParams = new URLSearchParams(window.location.search)
+  const showPts = urlParams.get('show_pts') !== 'false'
+  const showPb = urlParams.get('pb') !== 'false' // Default: show PB
+  const showWr = urlParams.get('wr') !== 'false' // Default: show WR
+
   // Computed values
   const mapPrefix = getMapPrefix(mapName).toLowerCase()
   const mapIsKz = isValidKzMap(mapName)
@@ -263,16 +269,16 @@ export default function MapOverlay() {
             </td>
           </tr>
 
-          {map && proWr !== null && (
-            <RecordRow wr={proWr} pb={proPb} label="PRO" />
+          {map && proWr !== null && (showPb || showWr) && (
+            <RecordRow wr={proWr} pb={proPb} label="PRO" showPts={showPts} showPb={showPb} showWr={showWr} />
           )}
 
-          {map && tpWr !== null && !preferNubTimes && (
-            <RecordRow wr={tpWr} pb={tpPb} label="TP" />
+          {map && tpWr !== null && !preferNubTimes && (showPb || showWr) && (
+            <RecordRow wr={tpWr} pb={tpPb} label="TP" showPts={showPts} showPb={showPb} showWr={showWr} />
           )}
 
-          {map && nubWr !== null && preferNubTimes && (
-            <RecordRow wr={nubWr} pb={nubPb} label="NUB" />
+          {map && nubWr !== null && preferNubTimes && (showPb || showWr) && (
+            <RecordRow wr={nubWr} pb={nubPb} label="NUB" showPts={showPts} showPb={showPb} showWr={showWr} />
           )}
         </tbody>
       </table>

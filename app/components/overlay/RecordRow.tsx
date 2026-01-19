@@ -4,9 +4,12 @@ interface RecordRowProps {
   wr: Record | null | undefined
   pb: Record | null | undefined
   label: 'TP' | 'PRO' | 'NUB'
+  showPts?: boolean
+  showPb?: boolean
+  showWr?: boolean
 }
 
-export default function RecordRow({ wr, pb, label }: RecordRowProps) {
+export default function RecordRow({ wr, pb, label, showPts = true, showPb = true, showWr = true }: RecordRowProps) {
   const headerColorClass =
     label === 'PRO' ? 'text-[#1e90ff]' : 'text-orange-500'
 
@@ -17,7 +20,7 @@ export default function RecordRow({ wr, pb, label }: RecordRowProps) {
           {label} |
         </span>
 
-        {wr === undefined ? (
+        {!showWr ? null : wr === undefined ? (
           <img
             className="h-5 ml-1.5 align-bottom"
             src="/map/assets/loading.gif"
@@ -38,7 +41,7 @@ export default function RecordRow({ wr, pb, label }: RecordRowProps) {
               {wr.player_name}
             </span>
 
-            {pb === undefined ? (
+            {showPb && (pb === undefined ? (
               <img
                 className="h-5 ml-1.5 align-bottom"
                 src="/map/assets/loading.gif"
@@ -58,11 +61,12 @@ export default function RecordRow({ wr, pb, label }: RecordRowProps) {
                 ) : (
                   <span className="text-[#ff7f7f]">
                     {' '}
-                    (+{formatTime(pb.time - wr.time)})
+                    (+{formatTime(pb.time - wr.time)}
+                    {showPts && typeof pb.points === 'number' ? ` ${pb.points}pts` : ''})
                   </span>
                 )}
               </>
-            ) : null}
+            ) : null)}
           </div>
         ) : null}
       </td>

@@ -153,6 +153,27 @@ export default function GOKZOverlayPage() {
       </div>
 
       <div className="flex flex-col gap-6">
+        {/* Server Controls */}
+        <div className="flex flex-col gap-4">
+          <div className="flex gap-2">
+            <Button
+              onClick={() => handleToggleServices(!gsiRunning || !overlayRunning)}
+              disabled={isToggling}
+              variant={gsiRunning && overlayRunning ? 'destructive' : 'default'}
+              className="flex-1"
+            >
+              {isToggling
+                ? 'Starting...'
+                : gsiRunning && overlayRunning
+                  ? 'Stop Overlay'
+                  : 'Start Overlay'}
+            </Button>
+            <Button onClick={loadStatus} variant="outline">
+              Refresh Status
+            </Button>
+          </div>
+        </div>
+
         {/* Status Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {/* CS:GO Running Status */}
@@ -185,22 +206,32 @@ export default function GOKZOverlayPage() {
         {/* Overlay Server Status */}
         <div className="border rounded-lg p-4">
           <div className="flex items-center justify-between mb-2">
-            <h3 className="text-sm font-medium">Progression Overlay</h3>
+            <h3 className="text-sm font-medium">Stream Overlay</h3>
             <Badge variant={overlayRunning ? 'default' : 'destructive'}>
               {overlayRunning ? 'Running' : 'Stopped'}
             </Badge>
           </div>
           {overlayRunning && overlayUrl && (
-            <div className="mt-2">
-              <p className="text-xs text-muted-foreground mb-2">URL: {overlayUrl}</p>
-              <Button
-                onClick={handleCopyLink}
-                variant="outline"
-                size="sm"
-                className="w-full"
-              >
-                {copied ? 'Copied!' : 'Copy Overlay URL'}
-              </Button>
+            <div className="mt-2 space-y-2">
+              <p className="text-xs text-muted-foreground mb-2">Available URLs:</p>
+              <div className="flex flex-col gap-2">
+                <a
+                  href={`${overlayUrl}/progress?color=red`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sm text-blue-500 hover:text-blue-700 underline cursor-pointer"
+                >
+                  {overlayUrl}/progress?color=red
+                </a>
+                <a
+                  href={`${overlayUrl}/map?pb=true&wr=true&show_pts=true`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sm text-blue-500 hover:text-blue-700 underline cursor-pointer"
+                >
+                  {overlayUrl}/map?pb=true&wr=true&show_pts=true
+                </a>
+              </div>
             </div>
           )}
         </div>
@@ -255,33 +286,12 @@ export default function GOKZOverlayPage() {
           </div>
         )}
 
-        {/* Server Controls */}
-        <div className="flex flex-col gap-4">
-          <div className="flex gap-2">
-            <Button
-              onClick={() => handleToggleServices(!gsiRunning || !overlayRunning)}
-              disabled={isToggling}
-              variant={gsiRunning && overlayRunning ? 'destructive' : 'default'}
-              className="flex-1"
-            >
-              {isToggling
-                ? 'Starting...'
-                : gsiRunning && overlayRunning
-                  ? 'Stop Services'
-                  : 'Start Services'}
-            </Button>
-            <Button onClick={loadStatus} variant="outline">
-              Refresh Status
-            </Button>
-          </div>
-        </div>
-
         {/* Instructions */}
         <div className="border rounded-lg p-4 bg-muted/50">
           <h3 className="text-sm font-medium mb-2">Instructions</h3>
           <ul className="text-xs text-muted-foreground space-y-1 list-disc list-inside">
             <li>Make sure CS:GO is running</li>
-            <li>Click "Start Services" to start both GSI and Overlay servers</li>
+            <li>Click "Start Overlay" to start both GSI and Overlay servers</li>
             <li>The config file will be automatically written to your CS:GO cfg folder</li>
             <li>Restart CS:GO if needed for the GSI config to take effect</li>
             <li>Game state data will appear here once CS:GO starts sending data</li>
