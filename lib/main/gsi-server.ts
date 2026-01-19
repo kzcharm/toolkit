@@ -36,6 +36,7 @@ export interface GSIGameState {
     observer_slot?: number
     team?: string
     activity?: string
+    clan?: string
     state?: {
       health?: number
       armor?: number

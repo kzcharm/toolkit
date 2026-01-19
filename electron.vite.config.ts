@@ -45,6 +45,7 @@ export default defineConfig({
         input: {
           index: resolve(__dirname, 'app/index.html'),
           overlay: resolve(__dirname, 'app/overlay/index.html'),
+          'map-overlay': resolve(__dirname, 'app/overlay/map-index.html'),
         },
       },
     },
