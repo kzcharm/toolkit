@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import SettingsPage from '@/app/components/settings/SettingsPage'
 import MapDownloadPage from '@/app/components/maps/MapDownloadPage'
+import GOKZOverlayPage from '@/app/components/overlay/GOKZOverlayPage'
 import { Button } from '@/app/components/ui/button'
 import './styles/app.css'
 
-type Page = 'settings' | 'maps'
+type Page = 'settings' | 'maps' | 'overlay'
 
 export default function App() {
   const [currentPage, setCurrentPage] = useState<Page>('settings')
@@ -24,10 +25,17 @@ export default function App() {
         >
           Download Maps
         </Button>
+        <Button
+          variant={currentPage === 'overlay' ? 'default' : 'ghost'}
+          onClick={() => setCurrentPage('overlay')}
+        >
+          GOKZ Overlay
+        </Button>
       </div>
       <div className="flex-1 overflow-auto">
         {currentPage === 'settings' && <SettingsPage />}
         {currentPage === 'maps' && <MapDownloadPage />}
+        {currentPage === 'overlay' && <GOKZOverlayPage />}
       </div>
     </div>
   )
