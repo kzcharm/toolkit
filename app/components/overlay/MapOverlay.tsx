@@ -237,7 +237,7 @@ export default function MapOverlay() {
         <tbody>
           <tr>
             <td>
-              <span className="text-[34px] font-medium pr-[1px] text-white">{mapName}</span>
+              <span id="mapName" className="map-name text-[34px] font-medium pr-[1px] text-white" style={{ WebkitTextStroke: '1px black', textShadow: '-1px -1px 0 black, 1px -1px 0 black, -1px 1px 0 black, 1px 1px 0 black' }}>{mapName}</span>
 
               {map === undefined ? (
                 <img
