@@ -413,8 +413,8 @@ class OverlayServerImpl implements OverlayServer {
     let modeName = DEFAULT_MODE;
     let steamId = '';
     let map = null;
-    let tpWr = null;
-    let tpPb = null;
+    let ovrWr = null;
+    let ovrPb = null;
     let proWr = null;
     let proPb = null;
     let fetchTimer = null;
@@ -535,14 +535,14 @@ class OverlayServerImpl implements OverlayServer {
       return result === undefined || result === null ? result : result;
     }
 
-    async function getTpWorldRecord(mapName, mode) {
+    async function getOvrWorldRecord(mapName, mode) {
       const result = await cachedFetch('records/top', {
         limit: 1,
         stage: 0,
         tickrate: 128,
         map_name: mapName,
-        has_teleports: true,
-        modes_list_string: mode
+        modes_list_string: mode,
+        overall: true
       });
       return Array.isArray(result) ? result : undefined;
     }
@@ -559,15 +559,15 @@ class OverlayServerImpl implements OverlayServer {
       return Array.isArray(result) ? result : undefined;
     }
 
-    async function getTpPersonalBest(mapName, mode, steamId) {
+    async function getOvrPersonalBest(mapName, mode, steamId) {
       const result = await cachedFetch('records/top', {
         stage: 0,
         limit: 1,
         tickrate: 128,
         map_name: mapName,
         steamId64: steamId,
-        has_teleports: true,
-        modes_list_string: mode
+        modes_list_string: mode,
+        overall: true
       });
       return Array.isArray(result) ? result : undefined;
     }
@@ -598,8 +598,8 @@ class OverlayServerImpl implements OverlayServer {
       }
 
       const state = isValidKzMap(mapName) && getGlobalMode(modeName) ? undefined : null;
-      tpWr = state;
-      tpPb = state;
+      ovrWr = state;
+      ovrPb = state;
       proWr = state;
       proPb = state;
     }
@@ -639,8 +639,8 @@ class OverlayServerImpl implements OverlayServer {
         }
 
         if (!mapData || !mapData.validated) {
-          tpWr = null;
-          tpPb = null;
+          ovrWr = null;
+          ovrPb = null;
           proWr = null;
           proPb = null;
           updateUI();
@@ -652,24 +652,24 @@ class OverlayServerImpl implements OverlayServer {
           return;
         }
 
-        const [tpWrResult, proWrResult] = await Promise.all([
-          getTpWorldRecord(apiMapName, globalMode),
+        const [ovrWrResult, proWrResult] = await Promise.all([
+          getOvrWorldRecord(apiMapName, globalMode),
           getProWorldRecord(apiMapName, globalMode)
         ]);
 
-        tpWr = Array.isArray(tpWrResult) && tpWrResult.length > 0 ? tpWrResult[0] : null;
+        ovrWr = Array.isArray(ovrWrResult) && ovrWrResult.length > 0 ? ovrWrResult[0] : null;
         proWr = Array.isArray(proWrResult) && proWrResult.length > 0 ? proWrResult[0] : null;
 
         if (steamId) {
-          const [tpPbResult, proPbResult] = await Promise.all([
-            tpWr ? getTpPersonalBest(apiMapName, globalMode, steamId) : Promise.resolve(null),
+          const [ovrPbResult, proPbResult] = await Promise.all([
+            ovrWr ? getOvrPersonalBest(apiMapName, globalMode, steamId) : Promise.resolve(null),
             proWr ? getProPersonalBest(apiMapName, globalMode, steamId) : Promise.resolve(null)
           ]);
 
-          tpPb = Array.isArray(tpPbResult) && tpPbResult.length > 0 ? tpPbResult[0] : null;
+          ovrPb = Array.isArray(ovrPbResult) && ovrPbResult.length > 0 ? ovrPbResult[0] : null;
           proPb = Array.isArray(proPbResult) && proPbResult.length > 0 ? proPbResult[0] : null;
         } else {
-          tpPb = null;
+          ovrPb = null;
           proPb = null;
         }
 
@@ -719,22 +719,23 @@ class OverlayServerImpl implements OverlayServer {
           recordsEl.innerHTML = '';
           const preferNubTimes = false;
 
+          // Display OVR (Overall) first, then PRO
+          if (map && ovrWr !== null && !preferNubTimes) {
+            const row = createRecordRow('OVR', ovrWr, ovrPb);
+            recordsEl.appendChild(row);
+          }
+
           if (map && proWr !== null) {
             const row = createRecordRow('PRO', proWr, proPb);
             recordsEl.appendChild(row);
           }
 
-          if (map && tpWr !== null && !preferNubTimes) {
-            const row = createRecordRow('TP', tpWr, tpPb);
-            recordsEl.appendChild(row);
-          }
-
           if (map && preferNubTimes) {
-            const nubWr = (tpWr !== undefined && proWr !== undefined) 
-              ? (tpWr && proWr ? (tpWr.time <= proWr.time ? tpWr : proWr) : (tpWr || proWr))
+            const nubWr = (ovrWr !== undefined && proWr !== undefined) 
+              ? (ovrWr && proWr ? (ovrWr.time <= proWr.time ? ovrWr : proWr) : (ovrWr || proWr))
               : undefined;
-            const nubPb = (tpPb !== undefined && proPb !== undefined)
-              ? (tpPb && proPb ? (tpPb.time <= proPb.time ? tpPb : proPb) : (tpPb || proPb))
+            const nubPb = (ovrPb !== undefined && proPb !== undefined)
+              ? (ovrPb && proPb ? (ovrPb.time <= proPb.time ? ovrPb : proPb) : (ovrPb || proPb))
               : undefined;
             if (nubWr !== null && nubWr !== undefined) {
               const row = createRecordRow('NUB', nubWr, nubPb);
@@ -753,7 +754,7 @@ class OverlayServerImpl implements OverlayServer {
       const td = document.createElement('td');
 
       const headerColor = label === 'PRO' ? '#1e90ff' : 'orange';
-      const marginLeft = label === 'TP' ? '19px' : label === 'PRO' ? '1px' : '0px';
+      const marginLeft = '0px'; // Left align both OVR and PRO
 
       let html = '<span style="color: ' + headerColor + '; font-size: 22px; font-weight: 300; margin-left: ' + marginLeft + ';">' + label + ' |</span>';
 
