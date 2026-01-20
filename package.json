@@ -1,6 +1,6 @@
 {
   "name": "gokz-top-toolkit",
-  "version": "",
+  "version": "0.1.0",
   "description": "GOKZ.TOP Toolkit - A modern Electron application with React, Vite, TypeScript, Shadcn UI and TailwindCSS",
   "main": "./out/main/main.js",
   "license": "MIT",
