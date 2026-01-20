@@ -1,0 +1,108 @@
+name: Build and Release Windows
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+  contents: read
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Get latest version from tags
+        id: get_version
+        run: |
+          git fetch --tags
+          $latestTag = git tag -l "v*.*.*" | Sort-Object {[version]($_ -replace '^v','')} | Select-Object -Last 1
+          if ([string]::IsNullOrEmpty($latestTag)) {
+            $newVersion = "0.1.0"
+            Write-Host "No existing tags found. Starting at version $newVersion"
+          } else {
+            $version = $latestTag -replace '^v',''
+            Write-Host "Latest tag: $latestTag (version: $version)"
+            $parts = $version -split '\.'
+            $major = [int]$parts[0]
+            $minor = [int]$parts[1]
+            $patch = [int]$parts[2]
+            $patch++
+            $newVersion = "$major.$minor.$patch"
+            Write-Host "New version: $newVersion"
+          }
+          Write-Host "VERSION=$newVersion" >> $env:GITHUB_ENV
+          Write-Host "TAG=v$newVersion" >> $env:GITHUB_ENV
+          echo "version=$newVersion" >> $env:GITHUB_OUTPUT
+          echo "tag=v$newVersion" >> $env:GITHUB_OUTPUT
+
+      - name: Update package.json version
+        run: |
+          $packageJson = Get-Content package.json | ConvertFrom-Json
+          $packageJson.version = $env:VERSION
+          $packageJson | ConvertTo-Json -Depth 10 | Set-Content package.json
+          Write-Host "Updated package.json version to $env:VERSION"
+
+      - name: Commit version change
+        run: |
+          git add package.json
+          git diff --cached --quiet
+          if ($LASTEXITCODE -ne 0) {
+            git commit -m "chore: bump version to $env:VERSION"
+            git push origin HEAD:main
+          } else {
+            Write-Host "No changes to commit, skipping commit step"
+          }
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Windows app
+        run: npm run build:win
+
+      - name: Create git tag
+        run: |
+          git tag $env:TAG
+          git push origin $env:TAG
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ env.TAG }}
+          name: Release ${{ env.TAG }}
+          body: |
+            ## Release ${{ env.TAG }}
+            
+            Automated release from main branch.
+            
+            ### Changes
+            - See commit history for details
+            
+            ### Downloads
+            Windows installer is attached below.
+          files: |
+            dist/*.exe
+            dist/*.zip
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
