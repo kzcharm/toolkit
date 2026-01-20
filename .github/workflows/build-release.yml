@@ -56,10 +56,9 @@ jobs:
 
       - name: Update package.json version
         run: |
-          $packageJson = Get-Content package.json | ConvertFrom-Json
-          $packageJson.version = $env:VERSION
-          $packageJson | ConvertTo-Json -Depth 10 | Set-Content package.json
-          Write-Host "Updated package.json version to $env:VERSION"
+          node -e "const fs = require('fs'); const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8')); pkg.version = process.env.VERSION; fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');"
+        env:
+          VERSION: ${{ env.VERSION }}
 
       - name: Commit version change
         run: |
