@@ -53,22 +53,36 @@ jobs:
           Write-Host "TAG=v$newVersion" >> $env:GITHUB_ENV
           echo "version=$newVersion" >> $env:GITHUB_OUTPUT
           echo "tag=v$newVersion" >> $env:GITHUB_OUTPUT
+          Write-Host "Set version to: $newVersion"
+          Write-Host "Set tag to: v$newVersion"
 
       - name: Update package.json version
         run: |
-          node -e "const fs = require('fs'); const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8')); pkg.version = process.env.VERSION; fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');"
-        env:
-          VERSION: ${{ env.VERSION }}
+          $version = "${{ steps.get_version.outputs.version }}"
+          Write-Host "Updating package.json version to: $version"
+          node -e "const fs = require('fs'); const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8')); pkg.version = '$version'; fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');"
+          Write-Host "Verifying version update..."
+          $updatedVersion = node -e "const pkg = require('./package.json'); console.log(pkg.version);"
+          Write-Host "Updated version in package.json: $updatedVersion"
 
       - name: Commit version change
         run: |
           git add package.json
           git diff --cached --quiet
           if ($LASTEXITCODE -ne 0) {
-            git commit -m "chore: bump version to $env:VERSION"
+            git commit -m "chore: bump version to ${{ steps.get_version.outputs.version }}"
             git push origin HEAD:main
           } else {
             Write-Host "No changes to commit, skipping commit step"
+          }
+
+      - name: Verify package.json version
+        run: |
+          $version = node -e "const pkg = require('./package.json'); console.log(pkg.version);"
+          Write-Host "Current package.json version: $version"
+          if ([string]::IsNullOrEmpty($version) -or $version -eq "null") {
+            Write-Host "ERROR: Version is missing or invalid in package.json"
+            exit 1
           }
 
       - name: Install dependencies
@@ -79,16 +93,16 @@ jobs:
 
       - name: Create git tag
         run: |
-          git tag $env:TAG
-          git push origin $env:TAG
+          git tag ${{ steps.get_version.outputs.tag }}
+          git push origin ${{ steps.get_version.outputs.tag }}
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: ${{ env.TAG }}
-          name: Release ${{ env.TAG }}
+          tag_name: ${{ steps.get_version.outputs.tag }}
+          name: Release ${{ steps.get_version.outputs.tag }}
           body: |
-            ## Release ${{ env.TAG }}
+            ## Release ${{ steps.get_version.outputs.tag }}
             
             Automated release from main branch.
             
