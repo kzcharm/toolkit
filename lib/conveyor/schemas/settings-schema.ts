@@ -152,4 +152,33 @@ export const settingsIpcSchema = {
     args: z.tuple([z.boolean()]),
     return: z.void(),
   },
+  'settings:get-steamcmd-dir': {
+    args: z.tuple([]),
+    return: z.string().nullable(),
+  },
+  'settings:set-steamcmd-dir': {
+    args: z.tuple([z.string()]),
+    return: z.void(),
+  },
+  'settings:show-folder-dialog': {
+    args: z.tuple([]),
+    return: z.string().nullable(),
+  },
+  'settings:run-gokz-script': {
+    args: z.tuple([
+      z.object({
+        steamCmdDir: z.string(),
+        csgoPath: z.string(),
+      }),
+    ]),
+    return: z.object({
+      success: z.boolean(),
+      message: z.string(),
+      output: z.string().optional(),
+    }),
+  },
+  'settings:get-local-ip': {
+    args: z.tuple([]),
+    return: z.string().nullable(),
+  },
 }

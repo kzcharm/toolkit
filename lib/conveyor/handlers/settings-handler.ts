@@ -1,8 +1,10 @@
-import { app, session, net } from 'electron'
+import { app, session, net, dialog } from 'electron'
 import { handle } from '@/lib/main/shared'
 import * as fs from 'fs-extra'
 import * as path from 'path'
 import { promisify } from 'util'
+import { exec } from 'child_process'
+import { networkInterfaces } from 'os'
 
 // Use require for native-reg since it's a CommonJS native module
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -145,7 +147,7 @@ function getSettingsPath(): string {
 /**
  * Load settings from disk
  */
-async function loadSettings(): Promise<{ csgoPath?: string; theme?: 'dark' | 'light' | 'system'; overlayEnabled?: boolean; gsiAutoStart?: boolean }> {
+async function loadSettings(): Promise<{ csgoPath?: string; theme?: 'dark' | 'light' | 'system'; overlayEnabled?: boolean; gsiAutoStart?: boolean; steamCmdDir?: string }> {
   const settingsPath = getSettingsPath()
   if (await fs.pathExists(settingsPath)) {
     try {
@@ -162,7 +164,7 @@ async function loadSettings(): Promise<{ csgoPath?: string; theme?: 'dark' | 'li
 /**
  * Save settings to disk
  */
-async function saveSettings(settings: { csgoPath?: string; theme?: 'dark' | 'light' | 'system'; overlayEnabled?: boolean; gsiAutoStart?: boolean }): Promise<void> {
+async function saveSettings(settings: { csgoPath?: string; theme?: 'dark' | 'light' | 'system'; overlayEnabled?: boolean; gsiAutoStart?: boolean; steamCmdDir?: string }): Promise<void> {
   const settingsPath = getSettingsPath()
   await fs.ensureDir(path.dirname(settingsPath))
   await fs.writeJSON(settingsPath, settings, { spaces: 2 })
@@ -524,6 +526,20 @@ export const registerSettingsHandlers = () => {
     // Ensure path ends with a trailing slash
     const normalizedPath = csgoPath.endsWith(path.sep) ? csgoPath : csgoPath + path.sep
     settings.csgoPath = normalizedPath
+    
+    // Auto-derive SteamCMD directory if not already set
+    if (!settings.steamCmdDir) {
+      const cleanPath = normalizedPath.endsWith(path.sep) ? normalizedPath.slice(0, -1) : normalizedPath
+      const lastSep = cleanPath.lastIndexOf(path.sep)
+      if (lastSep !== -1) {
+        const parentPath = cleanPath.substring(0, lastSep)
+        settings.steamCmdDir = path.join(parentPath, 'server')
+      } else {
+        // Fallback: use csgo path + server
+        settings.steamCmdDir = path.join(cleanPath, 'server')
+      }
+    }
+    
     await saveSettings(settings)
   })
 
@@ -1063,5 +1079,177 @@ export const registerSettingsHandlers = () => {
     const settings = await loadSettings()
     settings.gsiAutoStart = enabled
     await saveSettings(settings)
+  })
+
+  // Get SteamCMD directory
+  handle('settings:get-steamcmd-dir', async () => {
+    const settings = await loadSettings()
+    return settings.steamCmdDir || null
+  })
+
+  // Set SteamCMD directory
+  handle('settings:set-steamcmd-dir', async (steamCmdDir: string) => {
+    const settings = await loadSettings()
+    settings.steamCmdDir = steamCmdDir
+    await saveSettings(settings)
+  })
+
+  // Show folder selection dialog
+  handle('settings:show-folder-dialog', async () => {
+    const result = await dialog.showOpenDialog({
+      properties: ['openDirectory'],
+      title: 'Select SteamCMD Installation Directory',
+    })
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return null
+    }
+
+    return result.filePaths[0]
+  })
+
+  // Run GOKZ installation script
+  handle('settings:run-gokz-script', async ({ steamCmdDir, csgoPath }) => {
+    try {
+      // Validate paths
+      if (!steamCmdDir || !csgoPath) {
+        return {
+          success: false,
+          message: 'Both SteamCMD directory and CS:GO path must be set',
+          output: '',
+        }
+      }
+
+      // Get the script path
+      const appPath = app.getAppPath()
+      let scriptPath = path.join(appPath, 'gokz.ps1')
+
+      // In production, check if script is in resources folder
+      if (!(await fs.pathExists(scriptPath))) {
+        const resourcesPath = path.join(appPath, 'resources', 'gokz.ps1')
+        if (await fs.pathExists(resourcesPath)) {
+          scriptPath = resourcesPath
+        } else {
+          // Fallback: try relative to __dirname
+          const fallbackPath = path.join(__dirname, '../../../gokz.ps1')
+          if (await fs.pathExists(fallbackPath)) {
+            scriptPath = fallbackPath
+          } else {
+            return {
+              success: false,
+              message: 'gokz.ps1 script not found',
+              output: `Looked for script at: ${scriptPath}, ${resourcesPath}, ${fallbackPath}`,
+            }
+          }
+        }
+      }
+
+      // Read the script
+      let scriptContent = await fs.readFile(scriptPath, 'utf-8')
+
+      // Replace variables in the script
+      // Replace $steamCmdDir = "..." with user-provided path
+      scriptContent = scriptContent.replace(
+        /(\$steamCmdDir\s*=\s*)"[^"]*"/,
+        `$1"${steamCmdDir.replace(/\\/g, '\\\\')}"`
+      )
+
+      // Replace $gameDir = "..." with CS:GO path
+      // Remove trailing slash from csgoPath if present for the script
+      const cleanCsgoPath = csgoPath.endsWith(path.sep) ? csgoPath.slice(0, -1) : csgoPath
+      scriptContent = scriptContent.replace(
+        /(\$gameDir\s*=\s*)"[^"]*"/,
+        `$1"${cleanCsgoPath.replace(/\\/g, '\\\\')}"`
+      )
+
+      // Write modified script to temporary file
+      const tempDir = app.getPath('temp')
+      const tempScriptPath = path.join(tempDir, `gokz-${Date.now()}.ps1`)
+      await fs.writeFile(tempScriptPath, scriptContent, 'utf-8')
+
+      // Execute the script
+      return new Promise((resolve) => {
+        const output: string[] = []
+        let hasError = false
+
+        // Execute PowerShell script with elevated privileges
+        const command = `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${tempScriptPath}"`
+        
+        const childProcess = exec(command, { maxBuffer: 10 * 1024 * 1024 }, async (error, stdout, stderr) => {
+          // Clean up temp file
+          try {
+            await fs.remove(tempScriptPath)
+          } catch (cleanupError) {
+            console.error('Failed to cleanup temp script:', cleanupError)
+          }
+
+          const allOutput = output.join('') + stdout + (stderr ? `\nSTDERR:\n${stderr}` : '')
+          
+          if (error) {
+            resolve({
+              success: false,
+              message: `Script execution failed: ${error.message}`,
+              output: allOutput,
+            })
+          } else if (hasError) {
+            resolve({
+              success: false,
+              message: 'Script execution completed with errors',
+              output: allOutput,
+            })
+          } else {
+            resolve({
+              success: true,
+              message: 'Script executed successfully',
+              output: allOutput,
+            })
+          }
+        })
+
+        // Capture output in real-time
+        if (childProcess.stdout) {
+          childProcess.stdout.on('data', (data) => {
+            output.push(data.toString())
+          })
+        }
+
+        if (childProcess.stderr) {
+          childProcess.stderr.on('data', (data) => {
+            output.push(data.toString())
+            hasError = true
+          })
+        }
+      })
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      return {
+        success: false,
+        message: `Failed to execute script: ${errorMessage}`,
+        output: errorMessage,
+      }
+    }
+  })
+
+  // Get local IP address
+  handle('settings:get-local-ip', async () => {
+    try {
+      const interfaces = networkInterfaces()
+      for (const name of Object.keys(interfaces)) {
+        const nets = interfaces[name]
+        if (!nets) continue
+        
+        for (const net of nets) {
+          // Skip internal (loopback) and non-IPv4 addresses
+          if (net.family === 'IPv4' && !net.internal) {
+            return net.address
+          }
+        }
+      }
+      // Fallback to localhost if no external IP found
+      return '127.0.0.1'
+    } catch (error) {
+      console.error('Error getting local IP:', error)
+      return '127.0.0.1'
+    }
   })
 }

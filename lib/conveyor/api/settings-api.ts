@@ -23,4 +23,10 @@ export class SettingsApi extends ConveyorApi {
   setOverlayEnabled = (enabled: boolean) => this.invoke('settings:set-overlay-enabled', enabled)
   getGsiAutoStart = () => this.invoke('settings:get-gsi-auto-start')
   setGsiAutoStart = (enabled: boolean) => this.invoke('settings:set-gsi-auto-start', enabled)
+  getSteamCmdDir = () => this.invoke('settings:get-steamcmd-dir')
+  setSteamCmdDir = (path: string) => this.invoke('settings:set-steamcmd-dir', path)
+  showFolderDialog = () => this.invoke('settings:show-folder-dialog')
+  runGokzScript = (steamCmdDir: string, csgoPath: string) =>
+    this.invoke('settings:run-gokz-script', { steamCmdDir, csgoPath })
+  getLocalIP = () => this.invoke('settings:get-local-ip')
 }
