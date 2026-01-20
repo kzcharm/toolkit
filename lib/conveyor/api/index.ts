@@ -4,6 +4,7 @@ import { WindowApi } from './window-api'
 import { SettingsApi } from './settings-api'
 import { GsiApi } from './gsi-api'
 import { OverlayApi } from './overlay-api'
+import { PingApi } from './ping-api'
 
 export const conveyor = {
   app: new AppApi(electronAPI),
@@ -11,6 +12,7 @@ export const conveyor = {
   settings: new SettingsApi(electronAPI),
   gsi: new GsiApi(electronAPI),
   overlay: new OverlayApi(electronAPI),
+  ping: new PingApi(electronAPI),
 }
 
 export type ConveyorApi = typeof conveyor

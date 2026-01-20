@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, Copy, Grid, List, Play } from 'lucide-react'
+import { ArrowDown, ArrowUp, Copy, Play } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Badge } from '@/app/components/ui/badge'
 import { Button } from '@/app/components/ui/button'
@@ -11,17 +11,18 @@ import {
   TableRow,
 } from '@/app/components/ui/table'
 import { cn } from '@/lib/utils'
+import { useConveyor } from '@/app/hooks/use-conveyor'
 import { ServerCard, type ServerStatus, type PlayerInfo } from './ServerCard'
 import {
   getCountryFlag,
   formatTimerTime,
   getTierColor,
   formatTier,
+  getMapImageUrl,
 } from './server-utils'
 
-type SortField = 'hostname' | 'map_name' | 'map_tier' | 'player_count'
+type SortField = 'hostname' | 'map_name' | 'map_tier' | 'player_count' | 'ping'
 type SortDirection = 'asc' | 'desc'
-type ViewMode = 'table' | 'grid'
 
 interface ServersStatusResponse {
   data: ServerStatus[]
@@ -29,14 +30,10 @@ interface ServersStatusResponse {
 }
 
 // Load preferences from localStorage
-function loadViewMode(): ViewMode {
-  const saved = localStorage.getItem('servers_view_mode')
-  return saved === 'grid' || saved === 'table' ? saved : 'grid'
-}
-
 function loadSortField(): SortField {
   const saved = localStorage.getItem('servers_sort_field')
-  return (saved as SortField) || 'player_count'
+  const validFields: SortField[] = ['hostname', 'map_name', 'map_tier', 'player_count', 'ping']
+  return validFields.includes(saved as SortField) ? (saved as SortField) : 'player_count'
 }
 
 function loadSortDirection(): SortDirection {
@@ -44,30 +41,36 @@ function loadSortDirection(): SortDirection {
   return (saved === 'asc' || saved === 'desc' ? saved : 'desc') as SortDirection
 }
 
-function loadCountryFilter(): string {
+function loadGroupFilter(): string | null {
+  const saved = localStorage.getItem('servers_group_filter')
+  return saved || null
+}
+
+function loadCountryFilter(): string | null {
   const saved = localStorage.getItem('servers_country_filter')
-  return saved || ''
+  return saved || null
 }
 
 export default function ServersPage() {
   const [servers, setServers] = useState<ServerStatus[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [viewMode, setViewMode] = useState<ViewMode>(loadViewMode)
   const [sortField, setSortField] = useState<SortField>(loadSortField())
   const [sortDirection, setSortDirection] = useState<SortDirection>(
     loadSortDirection()
   )
-  const [selectedCountry, setSelectedCountry] = useState<string>(
+  const [selectedGroup, setSelectedGroup] = useState<string | null>(
+    loadGroupFilter()
+  )
+  const [selectedCountry, setSelectedCountry] = useState<string | null>(
     loadCountryFilter()
   )
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
+  const [pingResults, setPingResults] = useState<Map<string, number | null>>(new Map())
+  const [pingingIPs, setPingingIPs] = useState<Set<string>>(new Set())
+  const pingApi = useConveyor('ping')
 
   // Save preferences to localStorage
-  useEffect(() => {
-    localStorage.setItem('servers_view_mode', viewMode)
-  }, [viewMode])
-
   useEffect(() => {
     localStorage.setItem('servers_sort_field', sortField)
   }, [sortField])
@@ -77,7 +80,19 @@ export default function ServersPage() {
   }, [sortDirection])
 
   useEffect(() => {
-    localStorage.setItem('servers_country_filter', selectedCountry)
+    if (selectedGroup) {
+      localStorage.setItem('servers_group_filter', selectedGroup)
+    } else {
+      localStorage.removeItem('servers_group_filter')
+    }
+  }, [selectedGroup])
+
+  useEffect(() => {
+    if (selectedCountry) {
+      localStorage.setItem('servers_country_filter', selectedCountry)
+    } else {
+      localStorage.removeItem('servers_country_filter')
+    }
   }, [selectedCountry])
 
   // Fetch servers
@@ -154,21 +169,120 @@ export default function ServersPage() {
     return () => clearInterval(interval)
   }, [])
 
-  // Get available countries
+  // Ping unique IPs
+  useEffect(() => {
+    if (servers.length === 0) return
+
+    // Get unique IP:port combinations
+    const uniqueIPs = new Map<string, { host: string; port: number }>()
+    servers.forEach((server) => {
+      if (server.host && server.port) {
+        const key = `${server.host}:${server.port}`
+        if (!uniqueIPs.has(key)) {
+          uniqueIPs.set(key, { host: server.host, port: server.port })
+        }
+      }
+    })
+
+    // Ping each unique IP
+    const pingAllServers = async () => {
+      const pingPromises = Array.from(uniqueIPs.entries()).map(async ([key, { host, port }]) => {
+        // Skip if already pinging or already has a result
+        if (pingingIPs.has(key) || pingResults.has(key)) {
+          return
+        }
+
+        setPingingIPs((prev) => new Set(prev).add(key))
+        
+        try {
+          const result = await pingApi.pingServer(host, port)
+          setPingResults((prev) => {
+            const newMap = new Map(prev)
+            newMap.set(key, result.ping)
+            return newMap
+          })
+        } catch (err) {
+          console.error(`[ServersPage] Failed to ping ${key}:`, err)
+          setPingResults((prev) => {
+            const newMap = new Map(prev)
+            newMap.set(key, null)
+            return newMap
+          })
+        } finally {
+          setPingingIPs((prev) => {
+            const newSet = new Set(prev)
+            newSet.delete(key)
+            return newSet
+          })
+        }
+      })
+
+      await Promise.all(pingPromises)
+    }
+
+    pingAllServers()
+  }, [servers, pingApi])
+
+  // Get available server groups
+  const availableGroups = useMemo(() => {
+    const groupMap = new Map<string, string>()
+    servers.forEach((server) => {
+      if (server.group_id && server.group_name) {
+        groupMap.set(server.group_id, server.group_name)
+      }
+    })
+    return Array.from(groupMap.entries())
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }, [servers])
+
+  // Calculate player count per group (only from online servers)
+  const groupPlayerCounts = useMemo(() => {
+    const counts: Record<string, number> = {}
+    servers.forEach((server) => {
+      if (server.is_online && server.group_id) {
+        const botCount = server.bot_count ?? 0
+        const playerCount = server.player_count ?? 0
+        const realPlayers = Math.max(0, playerCount - botCount)
+        counts[server.group_id] = (counts[server.group_id] || 0) + realPlayers
+      }
+    })
+    return counts
+  }, [servers])
+
+  // Get available countries (filtered by selected group if any)
   const availableCountries = useMemo(() => {
     const countrySet = new Set<string>()
-    servers.forEach((server) => {
+    let serversToCheck = servers
+    
+    // First filter by group if selected
+    if (selectedGroup) {
+      serversToCheck = serversToCheck.filter(
+        (server) => server.group_id === selectedGroup
+      )
+    }
+    
+    serversToCheck.forEach((server) => {
       if (server.country) {
         countrySet.add(server.country)
       }
     })
     return Array.from(countrySet).sort()
-  }, [servers])
+  }, [servers, selectedGroup])
 
-  // Calculate player count per country (only from online servers)
+  // Calculate player count per country (only from online servers, filtered by selected group)
   const countryPlayerCounts = useMemo(() => {
     const counts: Record<string, number> = {}
-    servers.forEach((server) => {
+    let serversToCheck = servers
+    
+    // Filter by group if selected
+    if (selectedGroup) {
+      serversToCheck = serversToCheck.filter(
+        (server) => server.group_id === selectedGroup
+      )
+    }
+    
+    serversToCheck.forEach((server) => {
       if (server.is_online && server.country) {
         const botCount = server.bot_count ?? 0
         const playerCount = server.player_count ?? 0
@@ -177,26 +291,33 @@ export default function ServersPage() {
       }
     })
     return counts
-  }, [servers])
+  }, [servers, selectedGroup])
 
-  // Default to first country when countries become available (only once)
+  // Clear country filter if it's not available in the current group
   useEffect(() => {
-    if (availableCountries.length > 0) {
-      if (!selectedCountry || !availableCountries.includes(selectedCountry)) {
-        setSelectedCountry(availableCountries[0])
-      }
+    if (selectedCountry && !availableCountries.includes(selectedCountry)) {
+      setSelectedCountry(null)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [availableCountries.length, availableCountries[0]])
+  }, [selectedCountry, availableCountries])
 
-  // Filter by country
+  // Filter by group first, then by country
   const filteredServers = useMemo(() => {
     let filtered = servers
+    
+    // Filter by group first
+    if (selectedGroup) {
+      filtered = filtered.filter(
+        (server) => server.group_id === selectedGroup
+      )
+    }
+    
+    // Then filter by country
     if (selectedCountry) {
       filtered = filtered.filter((server) => server.country === selectedCountry)
     }
+    
     return filtered
-  }, [servers, selectedCountry])
+  }, [servers, selectedGroup, selectedCountry])
 
   // Calculate statistics from all online servers (not filtered)
   const allOnlineServers = useMemo(() => {
@@ -243,6 +364,16 @@ export default function ServersPage() {
           bValue = Math.max(0, (b.player_count ?? 0) - bBotCount)
           break
         }
+        case 'ping': {
+          const aKey = `${a.host}:${a.port}`
+          const bKey = `${b.host}:${b.port}`
+          const aPing = pingResults.get(aKey)
+          const bPing = pingResults.get(bKey)
+          // Treat null as infinity for sorting (failed pings go to end)
+          aValue = aPing ?? Infinity
+          bValue = bPing ?? Infinity
+          break
+        }
         default:
           return 0
       }
@@ -264,7 +395,7 @@ export default function ServersPage() {
     })
 
     return sorted
-  }, [filteredServers, sortField, sortDirection])
+  }, [filteredServers, sortField, sortDirection, pingResults])
 
   const handleSort = useCallback(
     (field: SortField) => {
@@ -274,8 +405,8 @@ export default function ServersPage() {
         )
       } else {
         setSortField(field)
-        // Default to DESC for player_count, ASC for others
-        setSortDirection(field === 'player_count' ? 'desc' : 'asc')
+        // Default to DESC for player_count and ping, ASC for others
+        setSortDirection(field === 'player_count' || field === 'ping' ? 'desc' : 'asc')
       }
     },
     [sortField]
@@ -410,34 +541,53 @@ export default function ServersPage() {
         </div>
         <div className="flex items-center gap-3">
           <span className="text-sm text-muted-foreground">Online:</span>
-          <Badge className="bg-orange-500 text-white">
+          <Badge className="bg-primary text-primary-foreground">
             {totalPlayers} players
           </Badge>
           <Badge variant="outline">{totalServers} servers</Badge>
-          <div className="flex gap-1">
-            <Button
-              variant={viewMode === 'table' ? 'default' : 'outline'}
-              size="icon"
-              onClick={() => setViewMode('table')}
-              aria-label="Table view"
-            >
-              <List className="h-4 w-4" />
-            </Button>
-            <Button
-              variant={viewMode === 'grid' ? 'default' : 'outline'}
-              size="icon"
-              onClick={() => setViewMode('grid')}
-              aria-label="Grid view"
-            >
-              <Grid className="h-4 w-4" />
-            </Button>
-          </div>
         </div>
       </div>
+
+      {/* Server Group Selector */}
+      {availableGroups.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant={selectedGroup === null ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setSelectedGroup(null)}
+          >
+            All Groups
+          </Button>
+          {availableGroups.map((group) => {
+            const isSelected = selectedGroup === group.id
+            const playerCount = groupPlayerCounts[group.id] || 0
+            return (
+              <Button
+                key={group.id}
+                variant={isSelected ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => {
+                  // Toggle: if already selected, deselect (set to null)
+                  setSelectedGroup(isSelected ? null : group.id)
+                }}
+              >
+                {group.name} ({playerCount})
+              </Button>
+            )
+          })}
+        </div>
+      )}
 
       {/* Country Tabs */}
       {availableCountries.length > 0 && (
         <div className="flex flex-wrap gap-2">
+          <Button
+            variant={selectedCountry === null ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setSelectedCountry(null)}
+          >
+            All Countries
+          </Button>
           {availableCountries.map((country) => {
             const isSelected = selectedCountry === country
             const playerCount = countryPlayerCounts[country] || 0
@@ -447,9 +597,8 @@ export default function ServersPage() {
                 variant={isSelected ? 'default' : 'outline'}
                 size="sm"
                 onClick={() => {
-                  if (!isSelected) {
-                    setSelectedCountry(country)
-                  }
+                  // Toggle: if already selected, deselect (set to null)
+                  setSelectedCountry(isSelected ? null : country)
                 }}
               >
                 <div className="flex items-center gap-2">
@@ -466,13 +615,11 @@ export default function ServersPage() {
       )}
 
       {/* Table View */}
-      {viewMode === 'table' && (
-        <div className="flex flex-col gap-4">
-          <div className="rounded-md border">
-            <Table>
+      <div className="flex flex-col gap-4">
+        <table className="w-full caption-bottom text-sm">
               <TableHeader>
                 <TableRow>
-                  <TableHead>
+                  <TableHead className="max-w-[200px]">
                     <SortableHeader field="hostname">Server</SortableHeader>
                   </TableHead>
                   <TableHead>
@@ -483,6 +630,9 @@ export default function ServersPage() {
                   </TableHead>
                   <TableHead>
                     <SortableHeader field="player_count">Players</SortableHeader>
+                  </TableHead>
+                  <TableHead>
+                    <SortableHeader field="ping">Ping</SortableHeader>
                   </TableHead>
                   <TableHead>Actions</TableHead>
                 </TableRow>
@@ -518,14 +668,16 @@ export default function ServersPage() {
                             }
                           }}
                         >
-                          <TableCell>
-                            <div className="flex items-center gap-2">
+                          <TableCell className="max-w-[200px]">
+                            <div className="flex items-center gap-2 min-w-0">
                               {server.country && (
-                                <span className="text-lg leading-none">
+                                <span className="text-lg leading-none shrink-0">
                                   {getCountryFlag(server.country)}
                                 </span>
                               )}
-                              <span>{server.hostname || 'Unknown'}</span>
+                              <span className="truncate" title={server.hostname || 'Unknown'}>
+                                {server.hostname || 'Unknown'}
+                              </span>
                             </div>
                           </TableCell>
                           <TableCell>{server.map_name || '-'}</TableCell>
@@ -561,78 +713,194 @@ export default function ServersPage() {
                             </Badge>
                           </TableCell>
                           <TableCell>
+                            {(() => {
+                              const pingKey = `${server.host}:${server.port}`
+                              const ping = pingResults.get(pingKey)
+                              const isPinging = pingingIPs.has(pingKey)
+                              
+                              if (isPinging) {
+                                return (
+                                  <Badge variant="outline" className="text-muted-foreground">
+                                    Pinging...
+                                  </Badge>
+                                )
+                              }
+                              
+                              if (ping === null || ping === undefined) {
+                                return (
+                                  <Badge variant="outline" className="bg-gray-500 text-white">
+                                    -
+                                  </Badge>
+                                )
+                              }
+                              
+                              // Color coding: green < 50ms, yellow < 100ms, orange < 150ms, red >= 150ms
+                              const getPingBadgeColor = (pingValue: number) => {
+                                if (pingValue < 50) return 'bg-green-500 text-white'
+                                if (pingValue < 100) return 'bg-yellow-500 text-white'
+                                if (pingValue < 150) return 'bg-orange-500 text-white'
+                                return 'bg-red-500 text-white'
+                              }
+                              
+                              return (
+                                <Badge className={getPingBadgeColor(ping)}>
+                                  {ping}ms
+                                </Badge>
+                              )
+                            })()}
+                          </TableCell>
+                          <TableCell>
                             <div className="flex gap-2">
                               <Button
-                                size="sm"
+                                size="icon"
                                 variant="outline"
                                 onClick={(e) => {
                                   e.stopPropagation()
                                   handleCopyAddress(server.host, server.port)
                                 }}
                                 disabled={!isOnline}
+                                title="Copy server address"
                               >
-                                <Copy className="h-3 w-3 mr-1" />
-                                Copy
+                                <Copy className="h-4 w-4" />
                               </Button>
                               <Button
-                                size="sm"
+                                size="icon"
                                 variant="outline"
                                 onClick={(e) => {
                                   e.stopPropagation()
                                   handleSteamConnect(server.host, server.port)
                                 }}
                                 disabled={!isOnline}
+                                title="Connect via Steam"
                               >
-                                <Play className="h-3 w-3 mr-1" />
-                                Connect
+                                <Play className="h-4 w-4" />
                               </Button>
                             </div>
                           </TableCell>
                         </TableRow>
                         {isExpanded && (
                           <TableRow>
-                            <TableCell colSpan={5} className="p-4">
-                              <div className="space-y-4">
+                            <TableCell colSpan={6} className="p-0">
+                              <div className="p-4">
                                 {hasMap && (
-                                  <div>
-                                    <h4 className="font-semibold mb-2">Map</h4>
-                                    <div className="text-sm text-muted-foreground">
-                                      {server.map_name}
+                                  <>
+                                    <div className="mb-4 flex justify-center">
+                                      <div className="relative aspect-video w-full max-w-xl overflow-hidden rounded-md bg-gray-100 dark:bg-gray-800">
+                                        {(() => {
+                                          const mapImageUrl = getMapImageUrl(
+                                            server.map_name
+                                          )
+                                          return mapImageUrl ? (
+                                            <img
+                                              src={mapImageUrl}
+                                              alt={server.map_name || ''}
+                                              className="h-full w-full object-cover"
+                                              onError={(e) => {
+                                                e.currentTarget.style.display =
+                                                  'none'
+                                              }}
+                                            />
+                                          ) : null
+                                        })()}
+                                      </div>
                                     </div>
-                                  </div>
+                                    {/* Map name and tier badge */}
+                                    <div className="mb-4 flex items-center justify-center gap-3">
+                                      <span className="text-lg font-semibold">
+                                        {server.map_name}
+                                      </span>
+                                      {server.map_tier !== null &&
+                                        server.map_tier !== undefined &&
+                                        server.map_tier !== 0 && (
+                                          <Badge
+                                            className="text-white"
+                                            style={{
+                                              backgroundColor: getTierColor(
+                                                server.map_tier
+                                              ),
+                                            }}
+                                          >
+                                            {formatTier(server.map_tier)}
+                                          </Badge>
+                                        )}
+                                    </div>
+                                  </>
                                 )}
                                 {hasPlayers && (
-                                  <div>
-                                    <h4 className="font-semibold mb-2">
-                                      Players ({server.players?.length || 0})
-                                    </h4>
-                                    <div className="flex flex-wrap gap-2">
-                                      {server.players?.map((player, idx) => {
-                                        const playerName =
-                                          player.name || 'Unknown'
-                                        const playerMode = player.mode
-                                        const timerTime = player.timer_time
+                                  <div className="space-y-4">
+                                    <div className="flex justify-center">
+                                      <div className="w-full max-w-4xl">
+                                        <Table>
+                                          <TableHeader>
+                                            <TableRow>
+                                              <TableHead className="w-10" />
+                                              <TableHead>Name</TableHead>
+                                              <TableHead>Timer Time</TableHead>
+                                              <TableHead>Status</TableHead>
+                                            </TableRow>
+                                          </TableHeader>
+                                          <TableBody>
+                                            {server.players?.length === 0 ? (
+                                              <TableRow>
+                                                <TableCell
+                                                  colSpan={4}
+                                                  className="text-center text-muted-foreground"
+                                                >
+                                                  No players
+                                                </TableCell>
+                                              </TableRow>
+                                            ) : (
+                                              server.players?.map(
+                                                (player, idx) => {
+                                                  const playerName =
+                                                    player.name || 'Unknown'
+                                                  const playerMode = player.mode
+                                                  const timerTime =
+                                                    player.timer_time
+                                                  const playerStatus =
+                                                    player.status
 
-                                        return (
-                                          <div
-                                            key={idx}
-                                            className="rounded-md bg-muted px-2 py-1 text-xs"
-                                          >
-                                            {playerMode && (
-                                              <span className="mr-1 text-muted-foreground">
-                                                [{playerMode}]
-                                              </span>
+                                                  return (
+                                                    <TableRow key={idx}>
+                                                      <TableCell>
+                                                        {player.country && (
+                                                          <span className="flex justify-center text-lg leading-none">
+                                                            {getCountryFlag(
+                                                              player.country
+                                                            )}
+                                                          </span>
+                                                        )}
+                                                      </TableCell>
+                                                      <TableCell>
+                                                        <div className="flex items-center gap-2">
+                                                          <span>
+                                                            {playerMode &&
+                                                              `[${playerMode}] `}
+                                                            {playerName}
+                                                          </span>
+                                                        </div>
+                                                      </TableCell>
+                                                      <TableCell>
+                                                        {formatTimerTime(
+                                                          timerTime
+                                                        )}
+                                                      </TableCell>
+                                                      <TableCell>
+                                                        <Badge
+                                                          variant="outline"
+                                                          className="text-xs"
+                                                        >
+                                                          {playerStatus || '-'}
+                                                        </Badge>
+                                                      </TableCell>
+                                                    </TableRow>
+                                                  )
+                                                }
+                                              )
                                             )}
-                                            {playerName}
-                                            {timerTime !== null &&
-                                              timerTime !== undefined && (
-                                                <span className="ml-1 text-muted-foreground">
-                                                  - {formatTimerTime(timerTime)}
-                                                </span>
-                                              )}
-                                          </div>
-                                        )
-                                      })}
+                                          </TableBody>
+                                        </Table>
+                                      </div>
                                     </div>
                                   </div>
                                 )}
@@ -646,7 +914,7 @@ export default function ServersPage() {
                 ) : (
                   <TableRow>
                     <TableCell
-                      colSpan={5}
+                      colSpan={6}
                       className="h-32 text-center text-muted-foreground"
                     >
                       No servers found
@@ -654,51 +922,8 @@ export default function ServersPage() {
                   </TableRow>
                 )}
               </TableBody>
-            </Table>
-          </div>
+            </table>
         </div>
-      )}
-
-      {/* Grid View */}
-      {viewMode === 'grid' && (
-        <div className="space-y-4">
-          {/* Sort controls */}
-          <div className="rounded-md border bg-muted/20 px-6 py-3">
-            <div className="flex flex-wrap gap-4">
-              <SortableHeader field="hostname">
-                <span className="text-sm font-medium">Server</span>
-              </SortableHeader>
-              <SortableHeader field="map_name">
-                <span className="text-sm font-medium">Map</span>
-              </SortableHeader>
-              <SortableHeader field="map_tier">
-                <span className="text-sm font-medium">Difficulty</span>
-              </SortableHeader>
-              <SortableHeader field="player_count">
-                <span className="text-sm font-medium">Players</span>
-              </SortableHeader>
-            </div>
-          </div>
-
-          {/* Grid */}
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {sortedServers.map((server) => (
-              <ServerCard
-                key={server.server_id}
-                server={server}
-                onCopyAddress={handleCopyAddress}
-                onSteamConnect={handleSteamConnect}
-              />
-            ))}
-          </div>
-
-          {sortedServers.length === 0 && (
-            <div className="py-12 text-center text-muted-foreground">
-              No servers available
-            </div>
-          )}
-        </div>
-      )}
     </div>
   )
 }

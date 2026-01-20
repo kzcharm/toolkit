@@ -22,6 +22,8 @@ export interface ServerStatus {
   is_online: boolean
   map_tier: number | null
   country: string | null
+  group_id: string | null
+  group_name: string | null
   players?: PlayerInfo[]
 }
 

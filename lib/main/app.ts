@@ -7,6 +7,7 @@ import { registerAppHandlers } from '@/lib/conveyor/handlers/app-handler'
 import { registerSettingsHandlers } from '@/lib/conveyor/handlers/settings-handler'
 import { registerGsiHandlers, autoStartGsiIfEnabled } from '@/lib/conveyor/handlers/gsi-handler'
 import { registerOverlayHandlers } from '@/lib/conveyor/handlers/overlay-handler'
+import { registerPingHandlers } from '@/lib/conveyor/handlers/ping-handler'
 
 export function createAppWindow(): void {
   // Register custom protocol for resources
@@ -36,6 +37,7 @@ export function createAppWindow(): void {
   registerSettingsHandlers()
   registerGsiHandlers()
   registerOverlayHandlers()
+  registerPingHandlers()
 
   // Auto-start GSI server if preference is enabled
   autoStartGsiIfEnabled().catch((error) => {
