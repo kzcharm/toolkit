@@ -2,19 +2,23 @@ import * as http from 'http'
 import * as fs from 'fs-extra'
 import * as path from 'path'
 import { app } from 'electron'
+import { WebSocketServer, WebSocket } from 'ws'
 import { GSIServer } from './gsi-server'
 
 export interface OverlayServer {
   start: (gsiServer: GSIServer, startPort?: number, maxPort?: number) => Promise<number>
   stop: () => void
-  getStatus: () => { running: boolean; port: number | null; url: string | null }
+  getStatus: () => { running: boolean; port: number | null; url: string | null; wsUrl: string | null }
 }
 
 class OverlayServerImpl implements OverlayServer {
   private server: http.Server | null = null
+  private wss: WebSocketServer | null = null
   private port: number | null = null
   private isRunning = false
   private gsiServer: GSIServer | null = null
+  private wsClients: Set<WebSocket> = new Set()
+  private gsiDataListener: ((gameState: any) => void) | null = null
 
   async start(
     gsiServer: GSIServer,
@@ -32,6 +36,13 @@ class OverlayServerImpl implements OverlayServer {
         await this.tryStartServer(port)
         this.port = port
         this.isRunning = true
+        
+        // Set up WebSocket server
+        this.setupWebSocketServer()
+        
+        // Listen to GSI server events
+        this.setupGSIListener()
+        
         return port
       } catch (error) {
         if (port === maxPort) {
@@ -42,6 +53,77 @@ class OverlayServerImpl implements OverlayServer {
     }
 
     throw new Error('Failed to start overlay server')
+  }
+
+  private setupWebSocketServer(): void {
+    if (!this.server) return
+
+    this.wss = new WebSocketServer({ server: this.server, path: '/ws' })
+
+    this.wss.on('connection', (ws: WebSocket) => {
+      this.wsClients.add(ws)
+      console.log(`[WebSocket] Client connected. Total clients: ${this.wsClients.size}`)
+
+      // Send current game state immediately on connection
+      if (this.gsiServer) {
+        const gameState = this.gsiServer.getGameState()
+        if (gameState) {
+          ws.send(JSON.stringify(gameState))
+        }
+      }
+
+      ws.on('close', () => {
+        this.wsClients.delete(ws)
+        console.log(`[WebSocket] Client disconnected. Total clients: ${this.wsClients.size}`)
+      })
+
+      ws.on('error', (error) => {
+        console.error('[WebSocket] Client error:', error)
+        this.wsClients.delete(ws)
+      })
+    })
+  }
+
+  private setupGSIListener(): void {
+    if (!this.gsiServer) return
+
+    // Remove existing listener if any
+    if (this.gsiDataListener) {
+      this.gsiServer.removeListener('data', this.gsiDataListener)
+    }
+
+    // Create new listener
+    this.gsiDataListener = (gameState: any) => {
+      this.broadcastToWebSocketClients(gameState)
+    }
+
+    // Add listener
+    this.gsiServer.on('data', this.gsiDataListener)
+  }
+
+  private broadcastToWebSocketClients(data: any): void {
+    if (this.wsClients.size === 0) return
+
+    const message = JSON.stringify(data)
+    const deadClients: WebSocket[] = []
+
+    this.wsClients.forEach((client) => {
+      if (client.readyState === WebSocket.OPEN) {
+        try {
+          client.send(message)
+        } catch (error) {
+          console.error('[WebSocket] Error sending message:', error)
+          deadClients.push(client)
+        }
+      } else {
+        deadClients.push(client)
+      }
+    })
+
+    // Remove dead clients
+    deadClients.forEach((client) => {
+      this.wsClients.delete(client)
+    })
   }
 
   private tryStartServer(port: number): Promise<void> {
@@ -877,20 +959,41 @@ class OverlayServerImpl implements OverlayServer {
   }
 
   stop(): void {
+    // Remove GSI listener
+    if (this.gsiServer && this.gsiDataListener) {
+      this.gsiServer.removeListener('data', this.gsiDataListener)
+      this.gsiDataListener = null
+    }
+
+    // Close WebSocket server
+    if (this.wss) {
+      this.wsClients.forEach((client) => {
+        if (client.readyState === WebSocket.OPEN) {
+          client.close()
+        }
+      })
+      this.wsClients.clear()
+      this.wss.close()
+      this.wss = null
+    }
+
+    // Close HTTP server
     if (this.server) {
       this.server.close()
       this.server = null
     }
+    
     this.isRunning = false
     this.port = null
     this.gsiServer = null
   }
 
-  getStatus(): { running: boolean; port: number | null; url: string | null } {
+  getStatus(): { running: boolean; port: number | null; url: string | null; wsUrl: string | null } {
     return {
       running: this.isRunning,
       port: this.port,
       url: this.port ? `http://localhost:${this.port}` : null,
+      wsUrl: this.port ? `ws://localhost:${this.port}/ws` : null,
     }
   }
 }

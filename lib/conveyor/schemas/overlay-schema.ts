@@ -7,6 +7,7 @@ export const overlayIpcSchema = {
       success: z.boolean(),
       port: z.number().nullable(),
       url: z.string().nullable(),
+      wsUrl: z.string().nullable(),
       error: z.string().optional(),
     }),
   },
@@ -22,6 +23,7 @@ export const overlayIpcSchema = {
       running: z.boolean(),
       port: z.number().nullable(),
       url: z.string().nullable(),
+      wsUrl: z.string().nullable(),
     }),
   },
 }

@@ -14,6 +14,7 @@ export const registerOverlayHandlers = () => {
           success: false,
           port: null,
           url: null,
+          wsUrl: null,
           error: 'GSI server is not running. Please start GSI server first.',
         }
       }
@@ -34,6 +35,7 @@ export const registerOverlayHandlers = () => {
         success: true,
         port,
         url: status.url,
+        wsUrl: status.wsUrl,
         error: undefined,
       }
     } catch (error) {
@@ -41,6 +43,7 @@ export const registerOverlayHandlers = () => {
         success: false,
         port: null,
         url: null,
+        wsUrl: null,
         error: error instanceof Error ? error.message : String(error),
       }
     }
